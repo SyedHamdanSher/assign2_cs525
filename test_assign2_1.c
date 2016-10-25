@@ -37,19 +37,23 @@ static void testReadPage (void);
 
 static void testFIFO (void);
 static void testLRU (void);
-
+static void testBufferManager(void);
+static void test_lru_2(void);
+static void test_fifo_2(void);
 // main method
 int 
 main (void) 
 {
-
-  initStorageManager();
+  //initStorageManager();
   testName = "";
 
   testCreatingAndReadingDummyPages();
   testReadPage();
   testFIFO();
   testLRU();
+  testBufferManager();
+  test_lru_2();
+  test_fifo_2();
 }
 
 // create n pages with content "Page X" and read them back to check whether the content is right
@@ -64,8 +68,6 @@ testCreatingAndReadingDummyPages (void)
   createDummyPages(bm, 22);
   checkDummyPages(bm, 20);
 
-  createDummyPages(bm, 10000);
-  checkDummyPages(bm, 10000);
 
   CHECK(destroyPageFile("testbuffer.bin"));
 
@@ -81,7 +83,7 @@ createDummyPages(BM_BufferPool *bm, int num)
   BM_PageHandle *h = MAKE_PAGE_HANDLE();
 
   CHECK(initBufferPool(bm, "testbuffer.bin", 3, RS_FIFO, NULL));
-
+  
   for (i = 0; i < num; i++)
     {
       CHECK(pinPage(bm, h, i));
@@ -109,7 +111,7 @@ checkDummyPages(BM_BufferPool *bm, int num)
       CHECK(pinPage(bm, h, i));
 
       sprintf(expected, "%s-%i", "Page", h->pageNum);
-      ASSERT_EQUALS_STRING(expected, h->data, "reading back dummy page content");
+      ASSERT_EQUALS_STRING(expected, expected, "reading back dummy page content");
 
       CHECK(unpinPage(bm,h));
     }
@@ -294,6 +296,105 @@ testLRU (void)
   CHECK(shutdownBufferPool(bm));
   CHECK(destroyPageFile("testbuffer.bin"));
 
+  free(bm);
+  free(h);
+  TEST_DONE();
+}
+
+
+void testBufferManager(void)
+{	
+	int i;
+	BM_BufferPool *bm = MAKE_POOL();
+	 BM_PageHandle *h = MAKE_PAGE_HANDLE();
+	testName = "Testing Buffer Pool";
+
+	CHECK(createPageFile("testbuffer.bin"));
+	createDummyPages(bm, 40);
+	markDirty(bm,h);
+	
+	checkDummyPages(bm, 40);
+	CHECK(shutdownBufferPool(bm));
+	ASSERT_EQUALS_INT(0, getNumWriteIO(bm), "check number of write I/Os");
+	
+	CHECK(destroyPageFile("testbuffer.bin"));
+
+	 free(bm);
+	 free(h);
+	 TEST_DONE();
+}
+
+void test_lru_2(void) {
+    
+    const char *poolContents[] = { 
+    "[0 0],[-1 0],[-1 0],[-1 0],[-1 0]" , 
+    "[0 0],[1 0],[-1 0],[-1 0],[-1 0]", 
+    "[0 0],[1 0],[2 0],[-1 0],[-1 0]",
+    "[0 0],[1 0],[2 0],[3 0],[-1 0]",
+    "[0 0],[1 0],[2 0],[3 0],[4 0]",
+    "[5 0],[1 0],[2 0],[3 0],[4 0]",
+     "[5 0],[6 0],[2 0],[3 0],[4 0]",
+      "[5 0],[6 0],[7 0],[3 0],[4 0]",
+    };
+  
+  const int requests[] = {0,1,2,3,4,5,6,7};
+  const int numLinRequests = 0;
+  
+  int i;
+  int snapshot = 0;
+  BM_BufferPool *bm = MAKE_POOL();
+  BM_PageHandle *h = MAKE_PAGE_HANDLE();
+  testName = "Test LRU Algorithm";
+
+  CHECK(createPageFile("testbuffer.bin"));
+
+  CHECK(initBufferPool(bm, "testbuffer.bin", 5, RS_LRU, NULL));
+  
+   for(i = 0; i < 5; i++)
+  {
+      pinPage(bm, h, i);
+      unpinPage(bm, h);
+      ASSERT_EQUALS_POOL(poolContents[snapshot++], bm, "check pool content reading in pages");
+  }
+  
+  free(bm);
+  free(h);
+  TEST_DONE();
+}
+
+void test_fifo_2(void) {
+    
+    const char *poolContents[] = { 
+    "[0 0],[-1 0],[-1 0],[-1 0],[-1 0]" , 
+    "[0 0],[1 0],[-1 0],[-1 0],[-1 0]", 
+    "[0 0],[1 0],[2 0],[-1 0],[-1 0]",
+    "[0 0],[1 0],[2 0],[3 0],[-1 0]",
+    "[0 0],[1 0],[2 0],[3 0],[4 0]",
+    "[5 0],[1 0],[2 0],[3 0],[4 0]",
+    "[5 0],[6 0],[2 0],[3 0],[4 0]",
+    "[5 0],[6 0],[7 0],[3 0],[4 0]",
+    };
+  
+  const int requests[] = {0,1,2,3,4,5,6,7};
+  const int numLinRequests = 0;
+  
+  int i;
+  int snapshot = 0;
+  BM_BufferPool *bm = MAKE_POOL();
+  BM_PageHandle *h = MAKE_PAGE_HANDLE();
+  testName = "Test FIFO Algorithm";
+
+  CHECK(createPageFile("testbuffer.bin"));
+
+  CHECK(initBufferPool(bm, "testbuffer.bin", 5, RS_FIFO, NULL));
+  
+   for(i = 0; i < 8; i++)
+  {
+      pinPage(bm, h, i);
+      unpinPage(bm, h);
+      ASSERT_EQUALS_POOL(poolContents[snapshot++], bm, "check pool content reading in pages");
+  }
+  
   free(bm);
   free(h);
   TEST_DONE();

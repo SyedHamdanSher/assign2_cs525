@@ -3,9 +3,10 @@
 
 // Include return codes and methods for logging errors
 #include "dberror.h"
-#include "DoublyLinkedList.h"
+
 // Include bool DT
 #include "dt.h"
+
 // Replacement Strategies
 typedef enum ReplacementStrategy {
   RS_FIFO = 0,
@@ -32,48 +33,16 @@ typedef struct BM_PageHandle {
   char *data;
 } BM_PageHandle;
 
-/**
- * This structures contains details about frames in buffer pool
- */
-typedef struct BM_PageFrame {
-  bool isdirty; // 1 for dirty, 0 otherwise
-  int fixCount; // number of times page got pinned
-  BM_PageHandle *pHandle; //page data is held
-} BM_PageFrame ;
-
-/**
- * This structure contains some book keeping information for the buffer pool, along with the pages in the pool.
- */
-typedef struct BM_PageTable {
-   int readCount; // count of writes happened to a buffer
-   int writeCount;// count of reads happened to a buffer
-   DList *pageList; //
-} BM_PageTable;
-
-typedef struct BM_MgmtData
-{
-	BM_PageTable *pTable;
-	BM_PageFrame *pFrame;
-	DList *bufferPoolList;
-}BM_MgmtData;
 // convenience macros
-#define MAKE_PAGE_FRAME()				\
-  ((BM_PageFrame *) malloc (sizeof(BM_PageFrame)))
-
-#define MAKE_PAGE_TABLE()				\
-  ((BM_PageTable *) malloc (sizeof(BM_PageTable)))
-
 #define MAKE_POOL()					\
   ((BM_BufferPool *) malloc (sizeof(BM_BufferPool)))
 
 #define MAKE_PAGE_HANDLE()				\
   ((BM_PageHandle *) malloc (sizeof(BM_PageHandle)))
 
-#define MAKE_MGMT_INFO()				\
-  ((BM_MgmtData*) malloc (sizeof(BM_MgmtData)))
-
 // Buffer Manager Interface Pool Handling
-RC initBufferPool(BM_BufferPool *const bm, const char *const pageFileName,const int numPages, ReplacementStrategy strategy,
+RC initBufferPool(BM_BufferPool *const bm, const char *const pageFileName, 
+		  const int numPages, ReplacementStrategy strategy, 
 		  void *stratData);
 RC shutdownBufferPool(BM_BufferPool *const bm);
 RC forceFlushPool(BM_BufferPool *const bm);
