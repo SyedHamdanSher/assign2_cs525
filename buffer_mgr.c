@@ -1,18 +1,17 @@
 #include <stdio.h>
+#include "buffer_mgr.h"
+#include "storage_mgr.h"
+#include "dberror.h"
 #include <stdlib.h>
 #include <string.h>
-#include "buffer_mgr.h"
-#include "STORAGE_MGR_H.h"
-#include "dberror.h"
 
 #define LRUCOUNTERFRAME 100
 #define PAGEMAXSIZE 7000
 #define FRAMEMAXSIZE 100
 
-BM_MgmtData *mgmt=NULL;
 
 //stores important information about buffer manager which is to be attached to mgmtdata of buffer manager
-	typedef struct bufferPoolInfo{
+typedef struct bufferPoolInfo{
 		int pagesToPageFrame[PAGEMAXSIZE];//mapping of pageNumbers to page frames
 		int pageFramesToPage[FRAMEMAXSIZE];//mapping of page frames to pages
 		bool pageFrameDirtyBit[FRAMEMAXSIZE];// maintains dirty flags for each page frames
@@ -78,22 +77,57 @@ BM_MgmtData *mgmt=NULL;
 		return bufferPool;
 	}
 
-//used to create a buffer pool for an existing page file
-RC initBufferPool(BM_BufferPool *const bm, const char *const pageFileName,const int numPages, ReplacementStrategy strategy,void *stratData)
-{
-	/*initBufferPool creates a new buffer pool with numPages page frames using the page replacement strategy strategy. 
-	The pool is used to cache pages from the page file with name pageFileName  Initially, all page frames should be empty. The page file should already exist, i.e., this method should not generate a new page file.
-	stratData can be used to pass parameters for the page replacement strategy. For example, for LRU-k this could be the parameter k.*/
 
-}
-
-//returns BM info.
+	//called at the time of buffer initialization
+	RC initBufferPool(BM_BufferPool *const bm, const char *const pageFileName, 
+		  const int numPages, ReplacementStrategy strategy, 
+		  void *stratData){
+		
+		SM_FileHandle fileHandle;
+		int i=1;
+		//opening a file to be used by BM.
+		if (openPageFile ((char *)pageFileName, &fileHandle) == RC_OK){
+		bufferPoolInfo *bufferPool=initBufferPoolInfo(numPages,fileHandle);
+		
+		//setting buffer manager fields.
+		bm->numPages=numPages;
+		bm->pageFile=(char *)pageFileName;
+		bm->strategy=strategy;//stores strategy to be used by BM when the page is to be replaced in frames.
+		bufferPool->head=bufferPool->tail=getNewNode();
+		bufferPool->head->pageFrameNo=0;
+		
+		//creating page frame node linked list with number of page frames = numPages
+		while(i<numPages){
+			bufferPool->tail->next = getNewNode();
+			bufferPool->tail->next->previous = bufferPool->tail;
+			bufferPool->tail = bufferPool->tail->next;
+			bufferPool->tail->pageFrameNo = i;
+			i++;
+		}
+		bufferPool->lastNode=bufferPool->tail;
+		bm->mgmtData=bufferPool;//attaching bufferpool info to data of BM to be used by various functions of BM.
+		return RC_OK;
+	}else{
+		RC_message="File to be opened doesn't exist";
+		return RC_FILE_NOT_FOUND;
+		}
+		
+	}
+	
+	
+	
+	//returns BM info.
 	bufferPoolInfo *getMgmtInfo(BM_BufferPool *const bm){
 		if(bm!=NULL){
 		bufferPoolInfo *mgmtInfo=(bufferPoolInfo*)bm->mgmtData;
 		return mgmtInfo;
 		}
+        else{
+            RC_message="File to be opened doesn't exist";
+            return RC_FILE_NOT_FOUND;
+        }
 	}
+	
 
 	//returns fixed count value at each page frames.
 	int *getFixCounts (BM_BufferPool *const bm){
@@ -108,14 +142,22 @@ RC initBufferPool(BM_BufferPool *const bm, const char *const pageFileName,const 
 			free(temp);
 			return mgmtInfo->pageFrameFixedCount;
 		}
+        else{
+            RC_message="File to be opened doesn't exist";
+            return RC_FILE_NOT_FOUND;
+        }
 	}
-
+	
 	//returns total number of read operation done by BM from disk
 	int getNumReadIO (BM_BufferPool *const bm){
 		if(bm!=NULL){
 			bufferPoolInfo *mgmtInfo=getMgmtInfo(bm);
 			return mgmtInfo->numReadIO;
 		}
+        else{
+            RC_message="File to be opened doesn't exist";
+            return RC_FILE_NOT_FOUND;
+        }
 	}
 
 	
@@ -132,6 +174,10 @@ RC initBufferPool(BM_BufferPool *const bm, const char *const pageFileName,const 
 		free(temp);
 		return mgmtInfo->pageFrameDirtyBit;
 		}
+        else{
+            RC_message="File to be opened doesn't exist";
+            return RC_FILE_NOT_FOUND;
+        }
 	}
 	
 	//returns total number of write operation performed by BM to disk.
@@ -140,44 +186,167 @@ RC initBufferPool(BM_BufferPool *const bm, const char *const pageFileName,const 
 		bufferPoolInfo *mgmtInfo=getMgmtInfo(bm);
 		return mgmtInfo->numWriteIO;
 		}
+        else{
+            RC_message="File to be opened doesn't exist";
+            return RC_FILE_NOT_FOUND;
+        }
 	}
-//shutdown a buffer pool and free up all associated resources (shutdownBufferPool)
-RC shutdownBufferPool(BM_BufferPool *const bm)
-{
+	
+	//markes page specified in page->pageNum as dirty
+	RC markDirty (BM_BufferPool *const bm, BM_PageHandle *const page){
+		if(bm!=NULL){
+			bufferPoolInfo *mgmtInfo=getMgmtInfo(bm);
+			pageFrame *temp=mgmtInfo->head;
+			while(temp!=NULL){
+				if(temp->pageNumber==page->pageNum){//searches page to be marked dirty in page frames.
+					temp->dirtyBit=true;//marking page as dirty.
+				}
+				temp=temp->next;
+			}
+			free(temp);
+            return RC_OK;
+			
+		}else{
+			RC_message="Buffer is not initialized ";
+			return RC_BUFFER_NOT_INITIALIZED;
+		}
+	}
+	
+	//called when client no longer requires the page
+	//unpins the page specified in page->pageNum only if the page has fixed count greater than 1.
+	RC unpinPage (BM_BufferPool *const bm, BM_PageHandle *const page){
+		if(bm!=NULL){
+			bufferPoolInfo *mgmtInfo=getMgmtInfo(bm);
+			pageFrame *temp=mgmtInfo->head;
+			while(temp!=NULL){
+				if(temp->pageNumber==page->pageNum && temp->fixedCount>0){
+					temp->fixedCount-=1;//decreasing fixed count value of page.
+				}
+				temp=temp->next;
+			}
+			free(temp);
+			return RC_OK;
+		}else{
+			RC_message="Buffer is not initialized ";
+			return RC_BUFFER_NOT_INITIALIZED;
+		}
+        
+    }
+	
+	
 
-}
-// to force the buffer manager to write all dirty pages to disk
-RC forceFlushPool(BM_BufferPool *const bm)
-{
+	//called when client want to read any page into memory, it decides on strategy which will be
+	//used at the time of page replacement.
+	RC pinPage (BM_BufferPool *const bm, BM_PageHandle *const page, const PageNumber pageNum){
+	if(bm!=NULL){
+		
+			if(bm->strategy==RS_FIFO){
+				 fifo(bm,page,pageNum);//calls FIFO.
+				
+			}else if(bm->strategy==RS_LRU){
+				lru(bm,page,pageNum);//calls LRU
+			}
+				return RC_OK;
+			}else{
+				RC_message="Buffer is not initialized ";
+				return RC_BUFFER_NOT_INITIALIZED;
+			}
+	}
+		
+	//calls during the shutting down of buffer
+	//this action releases all the consumed memory and also writes back pages which are dirty to disk.
+	RC shutdownBufferPool(BM_BufferPool *const bm){
+		if(bm!=NULL){
+			forceFlushPool(bm);//flushes the page frames and writes dirty pages return to disk
+			bufferPoolInfo *mgmtInfo=getMgmtInfo(bm);
+			pageFrame *temp=mgmtInfo->head;
+			int i;
+			for(i=0;temp!=NULL;i++){
+				
+				//assignes each page frames to head and releases head node.
+				free(mgmtInfo->head->data);
+				free(mgmtInfo->head);
+				temp=temp->next;
+				mgmtInfo->head=temp;
+			}
+		//makes head and tail node of linked listpage frames to NULL
+		mgmtInfo->head=NULL;
+		free(temp);
+		mgmtInfo->tail=NULL;
+		return RC_OK;
+		}else{
+			RC_message="Buffer is not initialized ";
+			return RC_BUFFER_NOT_INITIALIZED;
+		}
+	}
 
-}
-/*
-Page Management Functions
-
-These functions are used pin pages, unpin pages, mark pages as dirty, and force a page back to disk.
-*/
-//markDirty marks a page as dirty.
-RC markDirty (BM_BufferPool *const bm, BM_PageHandle *const page)//Syed
-{
-
-}
-//unpinPage unpins the page page. The pageNum field of page should be used to figure out which page to unpin.
-RC unpinPage (BM_BufferPool *const bm, BM_PageHandle *const page)//Syed
-{
-
-}
-//forcePage should write the current content of the page back to the page file on disk.
-RC forcePage (BM_BufferPool *const bm, BM_PageHandle *const page)//Syed
-{
-
-}
-
-//returns an array page numbers of page stored in page frames
+	
+	//flushesall pages in page frames and if any page is dirty then write it back to disk.
+	RC forceFlushPool(BM_BufferPool *const bm){
+		if(bm!=NULL){
+			SM_FileHandle fileHandle;
+			bufferPoolInfo *mgmtInfo=getMgmtInfo(bm);
+			pageFrame *temp=mgmtInfo->head;
+			if (openPageFile ((char *)(bm->pageFile), &fileHandle) == RC_OK){
+			while(temp != NULL){
+			if(temp->dirtyBit){//if dirty flag is true
+			//write the page back to disk file
+            if(writeBlock(temp->pageNumber, &fileHandle, temp->data) == RC_OK){
+				temp->dirtyBit = false;
+				(mgmtInfo->numWriteIO)+=1;//updtaes write count of BM by 1.
+			}else{
+			  return RC_WRITE_FAILED;
+			}
+			}
+			temp = temp->next;
+			}
+			free(temp);
+			return RC_OK;
+		}else{
+			RC_message="file to be opened doesn't exist";
+			return RC_FILE_NOT_FOUND;
+		}
+		}else{
+			RC_message="Buffer is not initialized ";
+			return RC_BUFFER_NOT_INITIALIZED;
+		}
+		
+	}
+	
+	RC forcePage (BM_BufferPool *const bm, BM_PageHandle *const page){
+		if(bm!=NULL){
+			SM_FileHandle fileHandle;
+			bufferPoolInfo *mgmtInfo=getMgmtInfo(bm);
+			pageFrame *temp=mgmtInfo->head;
+		if (openPageFile ((char *)(bm->pageFile), &fileHandle) == RC_OK){		
+			while(temp!=NULL){
+				if(temp->pageNumber==page->pageNum && temp->dirtyBit){
+					if(writeBlock(temp->pageNumber,&(mgmtInfo->filePointer),temp->data)==RC_OK){
+						temp->dirtyBit=false;
+						mgmtInfo->numWriteIO+=1;
+					}
+				}
+				temp=temp->next;
+			}
+			free(temp);
+			return RC_OK;
+		}else{
+			RC_message="file to be opened doesn't exist";
+			return RC_FILE_NOT_FOUND;
+		}
+		}else{
+			RC_message="Buffer is not initialized ";
+			return RC_BUFFER_NOT_INITIALIZED;
+		}
+	}
+	
+	//returns an array page numbers of page stored in page frames
 	PageNumber *getFrameContents (BM_BufferPool *const bm){
 		bufferPoolInfo *mgmtInfo=getMgmtInfo(bm);
 		return mgmtInfo->pageFramesToPage;
 	}
-
+	
+	
 	//finds and returns node's page with pageNumber with pageNum
 	pageFrame *locateNode(BM_BufferPool *const bm,BM_PageHandle *const page,const PageNumber pageNum ){	 
 	if(bm!=NULL){
@@ -270,24 +439,10 @@ RC forcePage (BM_BufferPool *const bm, BM_PageHandle *const page)//Syed
 			return;
 		}
 	}//
-//pinPage pins the page with page number pageNum. The buffer manager is responsible to set the pageNum field of the page handle passed to the method. 
-//Similarly, the data field should point to the page frame the page is stored in (the area in memory storing the content of the page).
-RC pinPage (BM_BufferPool *const bm, BM_PageHandle *const page, const PageNumber pageNum)//Syed
-{
-
-}
-
-RC Fifo_strategy(BM_BufferPool *const bm, const PageNumber pageNum)  
-{
-
-}
-
-RC Lru_strategy(BM_BufferPool *const bm, const PageNumber pageNum)  
-{
-
-}
-
-//called at the time of replacement of pages in page frame
+	
+	
+	
+	//called at the time of replacement of pages in page frame
 	RC updatePage(BM_BufferPool *const bm,BM_PageHandle *const page,pageFrame *node,const PageNumber pageNum){
 		bufferPoolInfo *mgmtInfo = getMgmtInfo(bm);
 		RC flag;
@@ -348,32 +503,7 @@ RC Lru_strategy(BM_BufferPool *const bm, const PageNumber pageNum)
 		flag=updatePage(bm, page, node, pageNum);
 		return flag;
 	}
-
-PageNumber *getFrameContents (BM_BufferPool *const bm)
-{ 
-
-}
-
-bool *getDirtyFlags (BM_BufferPool *const bm)
-{
-
-}
-
-int *getFixCounts (BM_BufferPool *const bm)
-{ 
-
-}
-
-int getNumReadIO (BM_BufferPool *const bm)
-{
-
-}
-
-int getNumWriteIO (BM_BufferPool *const bm)
-{  
-
-}
-
+		
 	//This page replacement algorithm will replace the page from page frame which has read into meory first
 	RC fifo (BM_BufferPool *const bm, BM_PageHandle *const page, const PageNumber pageNum){
 	if(bm!=NULL){
@@ -488,3 +618,8 @@ RC lru (BM_BufferPool *const bm, BM_PageHandle *const page,const PageNumber page
 		return RC_BUFFER_NOT_INITIALIZED;
 	}
 }
+
+	
+
+	
+	
