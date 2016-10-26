@@ -19,6 +19,11 @@ typedef enum ReplacementStrategy {
 // Data Types and Structures
 typedef int PageNumber;
 #define NO_PAGE -1
+//defining frame and page max sizes
+#define FRAMELRU 100
+#define PAGEMAX 7000
+#define FRAMEMAX 100
+
 
 typedef struct BM_BufferPool {
   char *pageFile;
