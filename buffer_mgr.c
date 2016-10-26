@@ -5,229 +5,238 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define LRUCOUNTERFRAME 100
-#define PAGEMAXSIZE 7000
-#define FRAMEMAXSIZE 100
+//#define FRAMELRU 100
+#define bufferPoolInfo* bufferNode;
+#define pageFrame* pageNode;
 
-
-//stores important information about buffer manager which is to be attached to mgmtdata of buffer manager
+/******************************************Creating structure for bufferPool and pageFrames************************************/
+//stores important information about buffer manager for mgmtdata
 typedef struct bufferPoolInfo{
-		int pagesToPageFrame[PAGEMAXSIZE];//mapping of pageNumbers to page frames
-		int pageFramesToPage[FRAMEMAXSIZE];//mapping of page frames to pages
-		bool pageFrameDirtyBit[FRAMEMAXSIZE];// maintains dirty flags for each page frames
-		int pageFrameFixedCount[FRAMEMAXSIZE];//maintains fixed count of each page frame
-		int numReadIO;// stores total number of Read IO
-		int numWriteIO;//stores total number of Write IO
-		int totalFrames;//maintains total number of filled frames count
-		int maxFrames;//stores number of page frames inside buffer pool
-		int totalCount;//maintains total number of pages in frames of buffer pool
+
+		int num_Read_IO;// stores total number of Read IO
+		int num_Write_IO;//stores total number of Write IO
+		bool page_Frame_Dirty[FRAMEMAX];// maintains dirty flags for each pageFrames
+		int page_Frame_Fixed_Count[FRAMEMAX];//maintains fixed count of each pageFrame
+		
+		
+		int pages_To_Page_Frame[PAGEMAX];//mapping of pageNumbers to page frames
+		int page_Frames_To_Page[FRAMEMAX];//mapping of page frames to pages
+		int total_Frames_Filled;//stores total number of filled frames count
+		int max_Frames;//stores number of pageFrames inside buffer pool
+		int lRU_Counter_PageFrame[FRAMELRU];// LRU counter information
+		int total_Count_Pages;//stores total number of pages in frames of bufferPool
+
 		SM_FileHandle filePointer;//stores file address of file
 		struct pageFrame *head; //head of page frames linked list
 		struct pageFrame *tail;//tail of page frames linked list
-		int lruCounter4PageFrame[LRUCOUNTERFRAME];// LRU counter information
 		struct pageFrame *lastNode;//maintains last node address of page frames list
 	}bufferPoolInfo;
 	
 	//keeps the iformation regarding each node in linked list of page frames
 	typedef struct pageFrame{
-		bool dirtyBit; //dirty bit for page  true=dirty false= Not dirty
-		int fixedCount;//fixed count to mark usage of page by client
-		int pinUnpin; //pinning and unpinnig of page
-		int pageNumber;//page number stored in buffer page frame
-		int pageFrameNo;//frame number in page frames linked list
-		int filled; // whether frame is filled or not
+		bool dirty_Bit; //dirty bit for page  true=dirty false= Not dirty
+		int page_Number;//page number stored in buffer pageFrame
+		int page_Frame_No;//frame number in page frames linked list
+		
+		int fixed_Count_Marked;//fixed count to mark usage of page by client
+		int pinning; //pinning and unpinnig of page
+		int filled; // whether frame is filled or not	
+		
 		char *data;//stores content of page.
 		struct pageFrame *next;//pointer to next node in page frames linked list
 		struct pageFrame *previous;//pointer to previous node in page frames linked list
 	}pageFrame;
 
+/***********************************************************************************************************************************/
 
+/******************************************Initializing Nodes for bufferPool and pageFrames*****************************************/
 	//called when new page frame is created during initialization of buffer, each information is initialized with default value.
-	pageFrame *getNewNode(){
-		pageFrame *linkNode = calloc(PAGE_SIZE,sizeof(SM_PageHandle));
-		linkNode->dirtyBit=false;
-		linkNode->pinUnpin=0;
-		linkNode->pageNumber=NO_PAGE;
-		linkNode->pageFrameNo=0;
-		linkNode->fixedCount=0;
+	pageNode getNewNode(){
+		pageNode Node = calloc(PAGE_SIZE,sizeof(SM_PageHandle));
+		linkNode->dirty_Bit=false;
+		linkNode->page_Number=NO_PAGE;
+		linkNode->page_Frame_No=0;
+		
+		linkNode->fixed_Count_Marked=0;
+		linkNode->pinning=0;
 		linkNode->filled=0;
 		linkNode->next=NULL;
 		linkNode->previous=NULL;
 		linkNode->data=(char *)calloc(PAGE_SIZE,sizeof(SM_PageHandle));;
-		return linkNode;
-		
+		return Node;
 	}
 
 	//storing the important information about buffer manager during initialization of buffer. 
-	bufferPoolInfo *initBufferPoolInfo(const int numPages,SM_FileHandle fileHandle){
-		bufferPoolInfo *bufferPool=calloc(PAGE_SIZE,sizeof(SM_PageHandle));
-		bufferPool->numReadIO=0;
-		bufferPool->numWriteIO=0; 
-		bufferPool->totalFrames=0;
-		bufferPool->totalCount=0;
-		bufferPool->maxFrames=numPages;//setting to number of frames maintained by Buffer Mananger
+	bufferNode initBufferPoolInfo(const int numPages,SM_FileHandle fileHandle){
+		bufferNode bufferPool=calloc(PAGE_SIZE,sizeof(SM_PageHandle));
+		bufferPool->num_Read_IO=0;
+		bufferPool->num_Write_IO=0; 
+		bufferPool->total_Frames_Filled=0;
+		bufferPool->total_Count_Pages=0;
+		bufferPool->max_Frames=numPages;//setting to number of frames maintained by BufferMananger
 		bufferPool->filePointer=fileHandle;//file used by buffer manager
 		
-		//allocating memory to each array of buffer information.
-		memset(bufferPool->lruCounter4PageFrame,NO_PAGE,LRUCOUNTERFRAME*sizeof(int));
-		memset(bufferPool->pagesToPageFrame,NO_PAGE,PAGEMAXSIZE*sizeof(int));
-		memset(bufferPool->pageFramesToPage,NO_PAGE,FRAMEMAXSIZE*sizeof(int));
-		memset(bufferPool->pageFrameDirtyBit,NO_PAGE,FRAMEMAXSIZE*sizeof(bool));
-		memset(bufferPool->pageFrameFixedCount,NO_PAGE,FRAMEMAXSIZE*sizeof(int));
+		//allocating memory
+		memset(bufferPool->pages_To_Page_Frame,NO_PAGE,PAGEMAX*sizeof(int));
+		memset(bufferPool->page_Frames_To_Page,NO_PAGE,FRAMEMAX*sizeof(int));
+		memset(bufferPool->lRU_Counter_PageFrame,NO_PAGE,FRAMELRU*sizeof(int));
+		memset(bufferPool->page_Frame_Dirty,NO_PAGE,FRAMEMAX*sizeof(bool));
+		memset(bufferPool->page_Frame_Fixed_Count,NO_PAGE,FRAMEMAX*sizeof(int));
 		return bufferPool;
 	}
+/***********************************************************************************************************************************/
 
-
-	//called at the time of buffer initialization
-	RC initBufferPool(BM_BufferPool *const bm, const char *const pageFileName, 
-		  const int numPages, ReplacementStrategy strategy, 
-		  void *stratData){
+	//creates a new buffer pool with numPages page frames using the page replacement strategy strategy. 
+	//The pool is used to cache pages from the page file with name pageFileName. Initially, all page frames should be empty. 
+	//The page file should already exist, i.e., this method should not generate a new page file
+	RC initBufferPool(BM_BufferPool *const bm, const char *const pageFileName, const int numPages, ReplacementStrategy strategy, void *stratData)
+	{
 		
 		SM_FileHandle fileHandle;
 		int i=1;
-		//opening a file to be used by BM.
+		//openingPageFile using storage_mgr.c function
 		if (openPageFile ((char *)pageFileName, &fileHandle) == RC_OK){
-		bufferPoolInfo *bufferPool=initBufferPoolInfo(numPages,fileHandle);
+		bufferNode bufferPool=initBufferPoolInfo(numPages,fileHandle);
 		
-		//setting buffer manager fields.
+		//setting bufferManager field values
 		bm->numPages=numPages;
 		bm->pageFile=(char *)pageFileName;
 		bm->strategy=strategy;//stores strategy to be used by BM when the page is to be replaced in frames.
 		bufferPool->head=bufferPool->tail=getNewNode();
-		bufferPool->head->pageFrameNo=0;
+		bufferPool->head->page_Frame_No=0;
 		
-		//creating page frame node linked list with number of page frames = numPages
+		//creating pageFrame Nodes which equals to numPages and using int i variable to use it as page_Frame_No of each frames
 		while(i<numPages){
 			bufferPool->tail->next = getNewNode();
-			bufferPool->tail->next->previous = bufferPool->tail;
-			bufferPool->tail = bufferPool->tail->next;
-			bufferPool->tail->pageFrameNo = i;
+			bufferPool->tail->next->previous = bufferPool->tail; //insert in the front
+			bufferPool->tail = bufferPool->tail->next; //linking the link lists
+			bufferPool->tail->page_Frame_No = i;
 			i++;
 		}
+
 		bufferPool->lastNode=bufferPool->tail;
-		bm->mgmtData=bufferPool;//attaching bufferpool info to data of BM to be used by various functions of BM.
+		bm->mgmtData=bufferPool;//storing bufferPoolInfo to managementData of BufferManagement to be used by various functions of BufferManager
 		return RC_OK;
-	}else{
-		RC_message="File to be opened doesn't exist";
+		}else{
+		//RC_message="File getting opened doesn't exist";
 		return RC_FILE_NOT_FOUND;
 		}
-		
 	}
 	
 	
 	
-	//returns BM info.
-	bufferPoolInfo *getMgmtInfo(BM_BufferPool *const bm){
+	//this function returns bufferManagerInfo.
+	bufferNode getMgmtInfo(BM_BufferPool *const bm){
 		if(bm!=NULL){
-		bufferPoolInfo *mgmtInfo=(bufferPoolInfo*)bm->mgmtData;
+		bufferNode mgmtInfo=(bufferNode)bm->mgmtData;
 		return mgmtInfo;
 		}
         else{
-            RC_message="File to be opened doesn't exist";
+            //RC_message="File to be opened doesn't exist";
             return RC_FILE_NOT_FOUND;
         }
 	}
 	
 
-	//returns fixed count value at each page frames.
+	//this function returns page_Frame_Fixed_Count value at each pageFrames.
 	int *getFixCounts (BM_BufferPool *const bm){
 		if(bm!=NULL){
-			bufferPoolInfo *mgmtInfo=getMgmtInfo(bm);
-			pageFrame *temp=mgmtInfo->head;//starting from head
-			while(temp!=NULL){//traverse till there are no frames.
+			bufferNode mgmtInfo=getMgmtInfo(bm);
+			pageNode tmp=mgmtInfo->head;//starting from head
+			while(tmp!=NULL){//traverse till there are no frames.
 				//stores fixed count value at each page frame to an aaray
-				(mgmtInfo->pageFrameFixedCount)[temp->pageFrameNo]=temp->fixedCount; 
-				temp=temp->next;
+				(mgmtInfo->page_Frame_Fixed_Count)[tmp->page_Frame_No]=tmp->fixed_Count_Marked; 
+				tmp=tmp->next;
 			}
-			free(temp);
-			return mgmtInfo->pageFrameFixedCount;
+			free(tmp);
+			return mgmtInfo->page_Frame_Fixed_Count;
 		}
         else{
-            RC_message="File to be opened doesn't exist";
+            //RC_message="File to be opened doesn't exist";
             return RC_FILE_NOT_FOUND;
         }
 	}
 	
-	//returns total number of read operation done by BM from disk
+	//this function returns total num_Read_IO i.e. read operation done by BufferManager from disk
 	int getNumReadIO (BM_BufferPool *const bm){
 		if(bm!=NULL){
-			bufferPoolInfo *mgmtInfo=getMgmtInfo(bm);
-			return mgmtInfo->numReadIO;
+			bufferNode mgmtInfo=getMgmtInfo(bm);
+			return mgmtInfo->num_Read_IO;
 		}
         else{
-            RC_message="File to be opened doesn't exist";
+            //RC_message="File to be opened doesn't exist";
             return RC_FILE_NOT_FOUND;
         }
 	}
 
 	
-	//returns an array of dirty flags at each page frame of BM
+	//this function returns page_Frame_Dirty i.e. an array of dirtyFlags at each pageFrame of BufferManager
 	bool *getDirtyFlags (BM_BufferPool *const bm){
 		if(bm!=NULL){
-		bufferPoolInfo *mgmtInfo=getMgmtInfo(bm);
-		pageFrame *temp=mgmtInfo->head;
-			while(temp!=NULL){
+		bufferNode mgmtInfo=getMgmtInfo(bm);
+		pageNode tmp=mgmtInfo->head;
+			while(tmp!=NULL){
 				//stores dirty bit value at each page in page frame.
-				(mgmtInfo->pageFrameDirtyBit)[temp->pageFrameNo]=temp->dirtyBit;
-				temp=temp->next;
+				(mgmtInfo->page_Frame_Dirty)[tmp->page_Frame_No]=tmp->dirty_Bit;
+				tmp=tmp->next;
 			}
-		free(temp);
-		return mgmtInfo->pageFrameDirtyBit;
+		free(tmp);
+		return mgmtInfo->page_Frame_Dirty;
 		}
         else{
-            RC_message="File to be opened doesn't exist";
+            //RC_message="File to be opened doesn't exist";
             return RC_FILE_NOT_FOUND;
         }
 	}
 	
-	//returns total number of write operation performed by BM to disk.
+	//this function returns total num_Write_IO i.e. Write operation done by BufferManager from disk
 	int getNumWriteIO (BM_BufferPool *const bm){
 		if(bm!=NULL){
-		bufferPoolInfo *mgmtInfo=getMgmtInfo(bm);
-		return mgmtInfo->numWriteIO;
+		bufferNode mgmtInfo=getMgmtInfo(bm);
+		return mgmtInfo->num_Write_IO;
 		}
         else{
-            RC_message="File to be opened doesn't exist";
+            //RC_message="File to be opened doesn't exist";
             return RC_FILE_NOT_FOUND;
         }
 	}
 	
-	//markes page specified in page->pageNum as dirty
+	//this function marks page specified in page->pageNum as dirty
 	RC markDirty (BM_BufferPool *const bm, BM_PageHandle *const page){
 		if(bm!=NULL){
-			bufferPoolInfo *mgmtInfo=getMgmtInfo(bm);
-			pageFrame *temp=mgmtInfo->head;
-			while(temp!=NULL){
-				if(temp->pageNumber==page->pageNum){//searches page to be marked dirty in page frames.
-					temp->dirtyBit=true;//marking page as dirty.
+			bufferNode mgmtInfo=getMgmtInfo(bm);
+			pageNode tmp=mgmtInfo->head;
+			while(tmp!=NULL){
+				if(tmp->page_Number==page->pageNum){//searches page to be marked dirty in page frames.
+					tmp->dirty_Bit=true;//marking page as dirty.
 				}
-				temp=temp->next;
+				tmp=tmp->next;
 			}
-			free(temp);
+			free(tmp);
             return RC_OK;
 			
 		}else{
-			RC_message="Buffer is not initialized ";
+			//RC_message="Buffer is not initialized ";
 			return RC_BUFFER_NOT_INITIALIZED;
 		}
 	}
 	
-	//called when client no longer requires the page
-	//unpins the page specified in page->pageNum only if the page has fixed count greater than 1.
+	//unpins the page page. The pageNum field of page should be used to figure out which page to unpin.
+	//unpins the page specified in page->pageNum only if the page has fixed_Count greater than 1.
 	RC unpinPage (BM_BufferPool *const bm, BM_PageHandle *const page){
 		if(bm!=NULL){
 			bufferPoolInfo *mgmtInfo=getMgmtInfo(bm);
-			pageFrame *temp=mgmtInfo->head;
-			while(temp!=NULL){
-				if(temp->pageNumber==page->pageNum && temp->fixedCount>0){
-					temp->fixedCount-=1;//decreasing fixed count value of page.
+			pageFrame *tmp=mgmtInfo->head;
+			while(tmp!=NULL){
+				if(tmp->page_Number==page->pageNum && tmp->fixed_Count_Marked>0){
+					tmp->fixed_Count_Marked-=1;//decreasing fixed count value of page.
 				}
-				temp=temp->next;
+				tmp=tmp->next;
 			}
-			free(temp);
+			free(tmp);
 			return RC_OK;
 		}else{
-			RC_message="Buffer is not initialized ";
+			//RC_message="Buffer is not initialized ";
 			return RC_BUFFER_NOT_INITIALIZED;
 		}
         
@@ -235,26 +244,28 @@ typedef struct bufferPoolInfo{
 	
 	
 
-	//called when client want to read any page into memory, it decides on strategy which will be
-	//used at the time of page replacement.
+	//pins the page with page number pageNum.
+	//The buffer manager is responsible to set the pageNum field of the page handle passed to the method
 	RC pinPage (BM_BufferPool *const bm, BM_PageHandle *const page, const PageNumber pageNum){
 	if(bm!=NULL){
 		
 			if(bm->strategy==RS_FIFO){
-				 fifo(bm,page,pageNum);//calls FIFO.
+				 fifo_Technique(bm,page,pageNum);//FIFO.
 				
 			}else if(bm->strategy==RS_LRU){
-				lru(bm,page,pageNum);//calls LRU
+				lru_Technique(bm,page,pageNum);//LRU
 			}
 				return RC_OK;
 			}else{
-				RC_message="Buffer is not initialized ";
+				//RC_message="Buffer is not initialized ";
 				return RC_BUFFER_NOT_INITIALIZED;
 			}
 	}
 		
-	//calls during the shutting down of buffer
-	//this action releases all the consumed memory and also writes back pages which are dirty to disk.
+	//destroys a buffer pool. This method should free up all resources associated with buffer pool. 
+	//For example, it should free the memory allocated for page frames. 
+	//If the buffer pool contains any dirty pages, then these pages should be written back to disk before destroying the pool. 
+	//It is an error to shutdown a buffer pool that has pinned pages.
 	RC shutdownBufferPool(BM_BufferPool *const bm){
 		if(bm!=NULL){
 			forceFlushPool(bm);//flushes the page frames and writes dirty pages return to disk
@@ -505,7 +516,7 @@ typedef struct bufferPoolInfo{
 	}
 		
 	//This page replacement algorithm will replace the page from page frame which has read into meory first
-	RC fifo (BM_BufferPool *const bm, BM_PageHandle *const page, const PageNumber pageNum){
+	RC fifo_Technique (BM_BufferPool *const bm, BM_PageHandle *const page, const PageNumber pageNum){
 	if(bm!=NULL){
 				bufferPoolInfo *mgmtInfo=getMgmtInfo(bm);
 				RC flag;
@@ -560,7 +571,7 @@ typedef struct bufferPoolInfo{
 			
 
 //this page replacement strategy will find and replace the page which is least recently used by client
-RC lru (BM_BufferPool *const bm, BM_PageHandle *const page,const PageNumber pageNum)
+RC lru_Technique (BM_BufferPool *const bm, BM_PageHandle *const page,const PageNumber pageNum)
 {
 	if(bm!=NULL){
 			RC flag;
