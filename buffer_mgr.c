@@ -269,127 +269,126 @@ typedef struct bufferPoolInfo{
 	RC shutdownBufferPool(BM_BufferPool *const bm){
 		if(bm!=NULL){
 			forceFlushPool(bm);//flushes the page frames and writes dirty pages return to disk
-			bufferPoolInfo *mgmtInfo=getMgmtInfo(bm);
-			pageFrame *temp=mgmtInfo->head;
+			bufferNode mgmtInfo=getMgmtInfo(bm);
+			pageNode tmp=mgmtInfo->head;
 			int i;
-			for(i=0;temp!=NULL;i++){
+			for(i=0;tmp!=NULL;i++){
 				
 				//assignes each page frames to head and releases head node.
 				free(mgmtInfo->head->data);
 				free(mgmtInfo->head);
-				temp=temp->next;
-				mgmtInfo->head=temp;
+				tmp=tmp->next;
+				mgmtInfo->head=tmp;
 			}
 		//makes head and tail node of linked listpage frames to NULL
 		mgmtInfo->head=NULL;
-		free(temp);
+		free(tmp);
 		mgmtInfo->tail=NULL;
 		return RC_OK;
 		}else{
-			RC_message="Buffer is not initialized ";
+			//RC_message="Buffer is not initialized ";
 			return RC_BUFFER_NOT_INITIALIZED;
 		}
 	}
 
 	
-	//flushesall pages in page frames and if any page is dirty then write it back to disk.
+	// causes all dirty pages (with fix count 0) from the buffer pool to be written to disk.
 	RC forceFlushPool(BM_BufferPool *const bm){
 		if(bm!=NULL){
 			SM_FileHandle fileHandle;
-			bufferPoolInfo *mgmtInfo=getMgmtInfo(bm);
-			pageFrame *temp=mgmtInfo->head;
+			bufferNode mgmtInfo=getMgmtInfo(bm);
+			pageNode tmp=mgmtInfo->head;
 			if (openPageFile ((char *)(bm->pageFile), &fileHandle) == RC_OK){
-			while(temp != NULL){
-			if(temp->dirtyBit){//if dirty flag is true
-			//write the page back to disk file
-            if(writeBlock(temp->pageNumber, &fileHandle, temp->data) == RC_OK){
-				temp->dirtyBit = false;
-				(mgmtInfo->numWriteIO)+=1;//updtaes write count of BM by 1.
+			while(tmp != NULL){
+			if(tmp->dirty_Bit){//true
+			//write the page to disk 
+            if(writeBlock(tmp->page_Number, &fileHandle, tmp->data) == RC_OK){
+				tmp->dirty_Bit = false;
+				(mgmtInfo->num_Write_IO)+=1;//updating num_write_IO count
 			}else{
 			  return RC_WRITE_FAILED;
 			}
 			}
-			temp = temp->next;
+			tmp = tmp->next;
 			}
-			free(temp);
+			free(tmp);
 			return RC_OK;
 		}else{
-			RC_message="file to be opened doesn't exist";
+			//RC_message="file to be opened doesn't exist";
 			return RC_FILE_NOT_FOUND;
 		}
 		}else{
-			RC_message="Buffer is not initialized ";
+			//RC_message="Buffer is not initialized ";
 			return RC_BUFFER_NOT_INITIALIZED;
 		}
 		
 	}
-	
+	//should write the current content of the page back to the page file on disk.
 	RC forcePage (BM_BufferPool *const bm, BM_PageHandle *const page){
 		if(bm!=NULL){
 			SM_FileHandle fileHandle;
-			bufferPoolInfo *mgmtInfo=getMgmtInfo(bm);
-			pageFrame *temp=mgmtInfo->head;
+			bufferNode mgmtInfo=getMgmtInfo(bm);
+			pageNode tmp=mgmtInfo->head;
 		if (openPageFile ((char *)(bm->pageFile), &fileHandle) == RC_OK){		
-			while(temp!=NULL){
-				if(temp->pageNumber==page->pageNum && temp->dirtyBit){
-					if(writeBlock(temp->pageNumber,&(mgmtInfo->filePointer),temp->data)==RC_OK){
-						temp->dirtyBit=false;
-						mgmtInfo->numWriteIO+=1;
+			while(tmp!=NULL){
+				if(tmp->page_Number==page->pageNum && tmp->dirty_Bit){
+					if(writeBlock(tmp->page_Number,&(mgmtInfo->filePointer),tmp->data)==RC_OK){
+						tmp->dirty_Bit=false; // making dirty bit false
+						mgmtInfo->num_Write_IO+=1; //incrementing num_write_IO by one 
 					}
 				}
-				temp=temp->next;
+				tmp=tmp->next;
 			}
-			free(temp);
+			free(tmp);
 			return RC_OK;
 		}else{
-			RC_message="file to be opened doesn't exist";
+			//RC_message="file to be opened doesn't exist";
 			return RC_FILE_NOT_FOUND;
 		}
 		}else{
-			RC_message="Buffer is not initialized ";
+			//RC_message="Buffer is not initialized ";
 			return RC_BUFFER_NOT_INITIALIZED;
 		}
 	}
 	
-	//returns an array page numbers of page stored in page frames
-	PageNumber *getFrameContents (BM_BufferPool *const bm){
-		bufferPoolInfo *mgmtInfo=getMgmtInfo(bm);
-		return mgmtInfo->pageFramesToPage;
+	//this function returns an array page numbers stored in pagFrames
+	int *getFrameContents (BM_BufferPool *const bm){
+		bufferNode mgmtInfo=getMgmtInfo(bm);
+		return mgmtInfo->page_Frames_To_Page;
 	}
 	
 	
-	//finds and returns node's page with pageNumber with pageNum
-	pageFrame *locateNode(BM_BufferPool *const bm,BM_PageHandle *const page,const PageNumber pageNum ){	 
+	//this function finds node with page_Number equals to pageNum and the nreturn the node
+	pageNode findNode(BM_BufferPool *const bm,BM_PageHandle *const page,const PageNumber pageNum ){	 
 	if(bm!=NULL){
-			bufferPoolInfo *mgmtInfo = getMgmtInfo(bm);
-			pageFrame *exist=mgmtInfo->head;
-			   while(exist!=NULL){
-				   if(exist->pageNumber==pageNum){//compares frame page's page number with pageNum to be search
-						return exist;
+			bufferNode mgmtInfo = getMgmtInfo(bm);
+			pageNode find=mgmtInfo->head;
+			   while(find!=NULL){
+				   if(find->page_Number==pageNum){//compares frame page's page number with pageNum to be search
+						return find;
 					 }
-					exist=exist->next;
+					find=find->next;
 				}
 				return NULL;
 		}else{
-			RC_message="Buffer is not initialized ";
+			//RC_message="Buffer is not initialized ";
 			return NULL;
 		}
 	}//
 	
-	//finds if page to be read by client is already there in memory or not
-	pageFrame *locateNodeinMemory(BM_PageHandle *const page,const PageNumber pageNum,BM_BufferPool *const bm){
+	//this function finds whether the page to be read by client is already there in memory or not
+	pageNode findNodeinMemory(BM_PageHandle *const page,const PageNumber pageNum,BM_BufferPool *const bm){
 		if(bm!=NULL){
-		bufferPoolInfo *mgmtInfo=getMgmtInfo(bm);
-		pageFrame *temp=mgmtInfo->head;
-		pageFrame *exist;
-		 if((mgmtInfo->pagesToPageFrame)[pageNum] != NO_PAGE){
-			if(((exist = locateNode(bm,page, pageNum)) != NULL)){
-			//if page to be read is already in memory then increase the fixed count of page
-			//and set the page handle information
-			exist->fixedCount+=1;
+		bufferNode mgmtInfo=getMgmtInfo(bm);
+		pageNode tmp=mgmtInfo->head;
+		pageNode find;
+		 if((mgmtInfo->pages_To_Page_Frame)[pageNum] != NO_PAGE){
+			if(((find = findNode(bm,page, pageNum)) != NULL)){
+			//page to be read is already in memory? if true increase the fixed_Count_Marked of page
+			find->fixed_Count_Marked+=1;
 			page->pageNum = pageNum;
-			page->data = exist->data; 
-			return exist;
+			page->data = find->data; 
+			return find;
 		}else{
 			return NULL;
 		}
@@ -397,115 +396,112 @@ typedef struct bufferPoolInfo{
 			return NULL;
 		}
 	}else{
-		RC_message="Buffer is not initialized ";
+		//RC_message="Buffer is not initialized ";
 		return NULL;
 	}
 	
 	}
 	
-	//called at the time of page replacement
-	void modifyPageHead(BM_BufferPool *const bm,pageFrame *node){
-		
+	//this function update page head information during replacement
+	void updatePageHead(BM_BufferPool *const bm,pageNode node){
 		if(bm!=NULL){
-					bufferPoolInfo *mgmtInfo=getMgmtInfo(bm);
-					pageFrame *h=mgmtInfo->head;
-					
-					//if page to be replaced is at head of page frame linked list then no replacement
-					if(node==mgmtInfo->head){
-						return;
-					}
-					
-					
-					else{
-						//adjust page frames if page to be replaced is last node in the page frames linked list
-						if(node==mgmtInfo->lastNode){
-							pageFrame *t = mgmtInfo->lastNode->previous;
-							mgmtInfo->lastNode = t;
-							t->next = NULL;
-							h->previous = node;
-							node->next = h;
-							mgmtInfo->head=node;
-							node->previous = NULL;
-							mgmtInfo->head->previous=NULL;
-							mgmtInfo->head=node;
-							mgmtInfo->head->previous=NULL;
-							return;
-						}else{
-							//adjust page frames if page to be replaced, if its in-between node
-							node->previous->next = node->next;
-							node->next->previous = node->previous;
-							h->previous = node;
-							node->next = h;
-							mgmtInfo->head=node;
-							node->previous = NULL;
-							mgmtInfo->head->previous=NULL;
-							mgmtInfo->head=node;
-							mgmtInfo->head->previous=NULL;
-							return;
-						}
-							
+			bufferNode mgmtInfo=getMgmtInfo(bm);
+			pageNode hd=mgmtInfo->head;
+			//page to be replaced is at head of pageFrame linked list data structure? if yes, no replacement
+			if(node==mgmtInfo->head){
+				return;
+			}
+			else{
+			//else if page to be replaced is last node in the page frames linked list, adjust page frames 
+			if(node==mgmtInfo->lastNode){
+				pageNode t = mgmtInfo->lastNode->previous;
+				mgmtInfo->lastNode = t;
+				t->next = NULL;
+				hd->previous = node;
+				node->next = hd;
+				mgmtInfo->head=node;
+				node->previous = NULL;
+				mgmtInfo->head->previous=NULL;
+				mgmtInfo->head=node;
+				mgmtInfo->head->previous=NULL;
+				return;
+			}else{
+			//page to be replaced is between node? adjust page frames 
+				node->previous->next = node->next;
+				node->next->previous = node->previous;
+				hd->previous = node;
+				node->next = hd;
+				mgmtInfo->head=node;
+				node->previous = NULL;
+				mgmtInfo->head->previous=NULL;
+				mgmtInfo->head=node;
+				mgmtInfo->head->previous=NULL;
+				return;
 				}
-			
-		}else{
+			}
+			}
+			else
+			{
 			return;
-		}
-	}//
+			}
+	}
 	
 	
 	
-	//called at the time of replacement of pages in page frame
-	RC updatePage(BM_BufferPool *const bm,BM_PageHandle *const page,pageFrame *node,const PageNumber pageNum){
-		bufferPoolInfo *mgmtInfo = getMgmtInfo(bm);
+	//this function is used at the time of replacement of pages in page frame
+	RC updatePage(BM_BufferPool *const bm,BM_PageHandle *const page,pageNode node,const PageNumber pageNum){
+		bufferNode mgmtInfo = getMgmtInfo(bm);
 		RC flag;
 		SM_FileHandle fileHandle;
 		if(bm!=NULL){
 			if ((flag = openPageFile ((char *)(bm->pageFile), &fileHandle)) == RC_OK){
-			//if page to be replaced is dirty then write it back to disk before replacement 
-			if(node->dirtyBit){
+			//page to be replaced is dirty?, write it back to disk before replacement 
+			if(node->dirty_Bit){
 				ensureCapacity(pageNum, &fileHandle);
-				if((flag = writeBlock(node->pageNumber,&fileHandle, node->data)) == RC_OK){
-					(mgmtInfo->numWriteIO)+=1;
+				if((flag = writeBlock(node->page_Number,&fileHandle, node->data)) == RC_OK){
+					(mgmtInfo->num_Write_IO)+=1;
 			  }else{
 				  return flag;
 				}		
 			}
-			//ensuing capacity of file before reading the page from file
+			//use ensuing capacity function of assignment one to ensure capacity before reading the page
 			ensureCapacity(pageNum, &fileHandle);
-			//reading the pageNum from file to data field.
+			//reading the pageNum from file
 			if((flag = readBlock(pageNum, &fileHandle, node->data)) == RC_OK){
-				(mgmtInfo->pagesToPageFrame)[node->pageNumber] = NO_PAGE;
-				node->pageNumber = pageNum;
-				(mgmtInfo->pagesToPageFrame)[node->pageNumber] = node->pageFrameNo;
-				(mgmtInfo->pageFramesToPage)[node->pageFrameNo] = node->pageNumber;
-				node->dirtyBit = false;
-				node->fixedCount = 1;
+				(mgmtInfo->pages_To_Page_Frame)[node->page_Number] = NO_PAGE;
+				node->page_Number = pageNum;
+				(mgmtInfo->pages_To_Page_Frame)[node->page_Number] = node->page_Frame_No;
+				(mgmtInfo->page_Frames_To_Page)[node->page_Frame_No] = node->page_Number;
+				node->dirty_Bit = false;
+				node->fixed_Count_Marked = 1;
 				page->pageNum = pageNum;
 				page->data = node->data;
-				mgmtInfo->numReadIO+=1;
-			}else{
-					return flag;
-				}
-			return RC_OK;
-			   }else{
-				   return flag;
-			  }
-		 }else{
-			 RC_message="Buffer is not initialized ";
-			 return RC_BUFFER_NOT_INITIALIZED;
+				mgmtInfo->num_Read_IO+=1;
+			}else
+			{
+				return flag;
 			}
+			return RC_OK;
+			}else
+			{
+				return flag;
+			}
+		 	}else{
+			//RC_message="Buffer is not initialized ";
+			return RC_BUFFER_NOT_INITIALIZED;
+		}
 	}
 	
-	//calls modify page head
-	void update(BM_BufferPool *const bm,pageFrame *node,const PageNumber pageNum){
+	//this function calls updatepagehead function to update page head
+	void update(BM_BufferPool *const bm,pageNode node,const PageNumber pageNum){
 		int i=0,j=0;
 		for(i=0;i<bm->numPages;i++){
 			j++;
 		}
-		modifyPageHead(bm,node);
+		updatePageHead(bm,node);
 	}
 	
-	//calls updatepage function
-	RC updatePageFrame(BM_BufferPool *const bm,BM_PageHandle *const page,pageFrame *node,const PageNumber pageNum){
+	RC updatePageFrame(BM_BufferPool *const bm,BM_PageHandle *const page,pageNode node,const PageNumber pageNum){
 		int i=0,j=0;
 		RC flag;
 		for(i=0;i<bm->numPages;i++){
@@ -515,117 +511,104 @@ typedef struct bufferPoolInfo{
 		return flag;
 	}
 		
-	//This page replacement algorithm will replace the page from page frame which has read into meory first
+	//FIFO page replacement
 	RC fifo_Technique (BM_BufferPool *const bm, BM_PageHandle *const page, const PageNumber pageNum){
 	if(bm!=NULL){
-				bufferPoolInfo *mgmtInfo=getMgmtInfo(bm);
-				RC flag;
-				pageFrame *existStatus;
-				int j;
-				
-				//if page to be read is already in memory then return pointer to that frame
-				if((existStatus=(locateNodeinMemory(page,pageNum,bm)))!=NULL){
-					return RC_OK;
-				}
-				
-				//check if there are any empty frames in memory, if yes then read page to that frame from disk file.
-				if((mgmtInfo->totalFrames) < mgmtInfo->maxFrames){
-					existStatus = mgmtInfo->head;
-			   
-					for(j=0;j<mgmtInfo->totalFrames;++j){
-						existStatus = existStatus->next;
-					}
-					//empty frame is found so read page to page frame and increase the total page count in page frames.
-					(mgmtInfo->totalFrames)+=1;
-					update(bm, existStatus,pageNum);
-					
-					//reading page to page frame
-					flag = updatePageFrame(bm, page, existStatus, pageNum);
-						if(flag!=RC_OK){
-								return flag;
-						}
-					return RC_OK;	
-				}//
-				else{
-					//if page frame is not empty then search for a page which has come first with fixed count=0
-					existStatus = mgmtInfo->lastNode;
-					for(j=0;(existStatus != NULL && existStatus != NULL && existStatus->fixedCount != 0);j++){
-						existStatus = existStatus->previous;
-					}
-					update(bm, existStatus,pageNum);
-					//read the page from disk file to the frame whose page is being replaced.
-					flag = updatePageFrame(bm, page, existStatus, pageNum);
-						if(flag!=RC_OK){
-								return flag;
-						}
-					return RC_OK;	
-				}
-							
-							
-			
-	}else{
-			RC_message="Buffer is not initialized ";
-			return RC_BUFFER_NOT_INITIALIZED;
+		bufferNode mgmtInfo=getMgmtInfo(bm);
+		RC flag;
+		pageNode status;
+		int j;
+		//page to be read is already in memory? if yes return pointer to that pageFrame
+		if((status=(findNodeinMemory(page,pageNum,bm)))!=NULL){
+		return RC_OK;
+		}
+		//there are any empty frames in memory? if yes then read page to that frame from disk file.
+		if((mgmtInfo->total_Frames_Filled) < mgmtInfo->max_Frames){
+			status = mgmtInfo->head;
+			for(j=0;j<mgmtInfo->total_Frames_Filled;++j){
+				status = status->next;
+			}
+			//increase the total page_Count in page frames.
+			(mgmtInfo->total_Frames_Filled)+=1;
+			update(bm, status,pageNum);
+			flag = updatePageFrame(bm, page, status, pageNum);
+			if(flag!=RC_OK){
+				return flag;
+			}
+			return RC_OK;	
+			}
+			else{
+			//pageFrame is not empty? if yes, search for a page which has come first i.e. fixed_Count_Marked=0
+			status = mgmtInfo->lastNode;
+			for(j=0;(status != NULL && status != NULL && status->fixed_Count_Marked != 0);j++){
+				status = status->previous;
+			}
+			update(bm, status,pageNum);
+			//read the page from disk file for replacement.
+			flag = updatePageFrame(bm, page, status, pageNum);
+			if(flag!=RC_OK){
+				return flag;
+			}
+			return RC_OK;	
+		}
+		}else{
+		//RC_message="Buffer is not initialized ";
+		return RC_BUFFER_NOT_INITIALIZED;
 	}
 }	
 			
 
-//this page replacement strategy will find and replace the page which is least recently used by client
+//LRU will find and replace the page which is least recently used by client
 RC lru_Technique (BM_BufferPool *const bm, BM_PageHandle *const page,const PageNumber pageNum)
 {
 	if(bm!=NULL){
 			RC flag;
-			pageFrame *existStatus;
-			bufferPoolInfo *mgmtInfo=getMgmtInfo(bm);
+			pageNode status;
+			bufferNode mgmtInfo=getMgmtInfo(bm);
 			int j;
-			//if page to be read is already in memory then return the pointer to page to client
-			if((existStatus = locateNodeinMemory(page,pageNum,bm)) != NULL){
+			//page to be read is already in memory? if yes, return the pointer to page to client
+			if((status = findNodeinMemory(page,pageNum,bm)) != NULL){
 				update(bm, existStatus,pageNum);
 				return RC_OK;
 			}
-			
-			//check if there are any empty frames in memory, if yes then read page to that frame from disk file.
-			if((mgmtInfo->totalFrames) < mgmtInfo->maxFrames){
-					existStatus = mgmtInfo->head;
-						for(j=0;j<mgmtInfo->totalFrames;++j){
-							existStatus = existStatus->next;
-						}
-		//empty frame is found so read page to page frame and increase the total page count in page frames.
-					mgmtInfo->totalFrames+=1;
-					
-				//reading page to page frame
-					if((flag = updatePageFrame(bm, page, existStatus, pageNum)) == RC_OK){
-							update(bm, existStatus,pageNum);
-					
-					}else{
-							return flag;
-					}
-					return RC_OK;
+			//empty frames in memory? if yes, read page to that frame from disk file.
+			if((mgmtInfo->total_Frames_Filled) < mgmtInfo->max_Frames){
+				status = mgmtInfo->head;
+				for(j=0;j<mgmtInfo->total_Frames_Filled;++j){
+					status = status->next;
+				}
+				//if page to be read is not in memory
+				mgmtInfo->total_Frames_Filled+=1;	
+				//reading page
+				if((flag = updatePageFrame(bm, page, status, pageNum)) == RC_OK){
+					update(bm, status,pageNum);
+				}else{
+				return flag;
+				}
+				return RC_OK;
 			}
 			else{
-				//if no page frame is empty then serach for a page which is least recently used in past with fixed count 0.
-				existStatus = mgmtInfo->lastNode;      
-				while(existStatus != NULL && existStatus->fixedCount != 0){
-					existStatus = existStatus->previous;
+				//search for a page which is least recently used in past i.e. fixed_Count_Marked 0.
+				status = mgmtInfo->lastNode;      
+				while(status != NULL && status->fixed_Count_Marked != 0){
+					status = status->previous;
 				}
-				
-				//if frame is found with page fixed count 0 then read the page to that page frame.
-				//if no frames are found with fixed count 0 then return error
-				if (existStatus != NULL){
-					if((flag = updatePageFrame(bm, page, existStatus, pageNum)) == RC_OK){
-						update(bm, existStatus,pageNum);
+				//frame is found with page fixed_Count_Marked 0? if yes, read the page to that page frame.
+				//else return error
+				if (status != NULL){
+					if((flag = updatePageFrame(bm, page, status, pageNum)) == RC_OK){
+						update(bm, status,pageNum);
 					}else{
 						return flag;
 					}
 					return RC_OK;
 				}else{
-					RC_message="No Frame is availble for page to load ";
-					   return RC_NO_MORE_EMPTY_FRAME;
+					//RC_message="No Frame is availble for page to load ";
+				return RC_NO_MORE_EMPTY_FRAME;
 				}
 			}
-    
-	}else{
-		RC_message="Buffer is not initialized ";
+    	}else{
+		//RC_message="Buffer is not initialized ";
 		return RC_BUFFER_NOT_INITIALIZED;
 	}
 }
