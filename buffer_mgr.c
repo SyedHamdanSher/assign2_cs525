@@ -7,6 +7,8 @@
 
 typedef struct bufferPoolInfo* bufferNode;
 typedef struct pageFrame* pageNode;
+RC fifo_Technique (BM_BufferPool *const bm, BM_PageHandle *const page, const PageNumber pageNum);
+RC lru_Technique (BM_BufferPool *const bm, BM_PageHandle *const page,const PageNumber pageNum);
 
 /******************************************Creating structure for bufferPool and pageFrames************************************/
 //stores important information about buffer manager for mgmtdata in bufferPoolInfo nodes
@@ -129,7 +131,7 @@ struct pageFrame{
 		return mgmtInfo;
 		}
         else{
-            return RC_FILE_NOT_FOUND;
+            return ((bufferNode)RC_FILE_NOT_FOUND);
         }
 	}
 	
@@ -149,7 +151,7 @@ struct pageFrame{
 		}
         else{
             
-            return RC_FILE_NOT_FOUND;
+            return ((int*)RC_FILE_NOT_FOUND);
         }
 	}
 	
@@ -181,7 +183,7 @@ struct pageFrame{
 		}
         else{
             
-            return RC_FILE_NOT_FOUND;
+            return ((bool*)RC_FILE_NOT_FOUND);
         }
 	}
 	
