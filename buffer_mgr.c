@@ -5,46 +5,44 @@
 #include <stdlib.h>
 #include <string.h>
 
-//#define FRAMELRU 100
 typedef struct bufferPoolInfo* bufferNode;
 typedef struct pageFrame* pageNode;
 
 /******************************************Creating structure for bufferPool and pageFrames************************************/
-//stores important information about buffer manager for mgmtdata
+//stores important information about buffer manager for mgmtdata in bufferPoolInfo nodes
 struct bufferPoolInfo{
 
-		int num_Read_IO;// stores total number of Read IO
-		int num_Write_IO;//stores total number of Write IO
-		bool page_Frame_Dirty[FRAMEMAX];// maintains dirty flags for each pageFrames
-		int page_Frame_Fixed_Count[FRAMEMAX];//maintains fixed count of each pageFrame
+	int num_Read_IO;// stores total number of Read IO
+	int num_Write_IO;//stores total number of Write IO
+	bool page_Frame_Dirty[FRAMEMAX];// maintains dirty flags for each pageFrames
+	int page_Frame_Fixed_Count[FRAMEMAX];//maintains fixed count of each pageFrame
 		
-		
-		int pages_To_Page_Frame[PAGEMAX];//mapping of pageNumbers to page frames
-		int page_Frames_To_Page[FRAMEMAX];//mapping of page frames to pages
-		int total_Frames_Filled;//stores total number of filled frames count
-		int max_Frames;//stores number of pageFrames inside buffer pool
-		int lRU_Counter_PageFrame[FRAMELRU];// LRU counter information
-		int total_Count_Pages;//stores total number of pages in frames of bufferPool
+	int pages_To_Page_Frame[PAGEMAX];//mapping of pageNumbers to page frames
+	int page_Frames_To_Page[FRAMEMAX];//mapping of page frames to pages
+	int total_Frames_Filled;//stores total number of filled frames count
+	int max_Frames;//stores number of pageFrames inside buffer pool
+	int lRU_Counter_PageFrame[FRAMELRU];// LRU counter information
+	int total_Count_Pages;//stores total number of pages in frames of bufferPool
 
-		SM_FileHandle filePointer;//stores file address of file
-		struct pageFrame *head; //head of page frames linked list
-		struct pageFrame *tail;//tail of page frames linked list
-		struct pageFrame *lastNode;//maintains last node address of page frames list
+	SM_FileHandle filePointer;//stores file address of file
+	pageNode head; //head of page frames linked list
+	pageNode tail;//tail of page frames linked list
+	pageNode lastNode;//maintains last node address of page frames list
 };
 	
-	//keeps the iformation regarding each node in linked list of page frames
+//keeps the information regarding each node in pageFrames nodes
 struct pageFrame{
-		bool dirty_Bit; //dirty bit for page  true=dirty false= Not dirty
-		int page_Number;//page number stored in buffer pageFrame
-		int page_Frame_No;//frame number in page frames linked list
+	bool dirty_Bit; //dirty bit for page  true=dirty false= Not dirty
+	int page_Number;//page number stored in buffer pageFrame
+	int page_Frame_No;//frame number in page frames linked list
 		
-		int fixed_Count_Marked;//fixed count to mark usage of page by client
-		int pinning; //pinning and unpinnig of page
-		int filled; // whether frame is filled or not	
+	int fixed_Count_Marked;//fixed count to mark usage of page by client
+	int pinning; //pinning and unpinnig of page
+	int filled; // whether frame is filled or not	
 		
-		char *data;//stores content of page.
-		struct pageFrame *next;//pointer to next node in page frames linked list
-		struct pageFrame *previous;//pointer to previous node in page frames linked list
+	char *data;//stores content of page.
+	pageNode next;//pointer to next node in page frames linked list
+	pageNode previous;//pointer to previous node in page frames linked list
 };
 
 /***********************************************************************************************************************************/
@@ -118,7 +116,6 @@ struct pageFrame{
 		bm->mgmtData=bufferPool;//storing bufferPoolInfo to managementData of BufferManagement to be used by various functions of BufferManager
 		return RC_OK;
 		}else{
-		//RC_message="File getting opened doesn't exist";
 		return RC_FILE_NOT_FOUND;
 		}
 	}
@@ -132,7 +129,6 @@ struct pageFrame{
 		return mgmtInfo;
 		}
         else{
-            //RC_message="File to be opened doesn't exist";
             return RC_FILE_NOT_FOUND;
         }
 	}
@@ -152,7 +148,7 @@ struct pageFrame{
 			return mgmtInfo->page_Frame_Fixed_Count;
 		}
         else{
-            //RC_message="File to be opened doesn't exist";
+            
             return RC_FILE_NOT_FOUND;
         }
 	}
@@ -164,7 +160,7 @@ struct pageFrame{
 			return mgmtInfo->num_Read_IO;
 		}
         else{
-            //RC_message="File to be opened doesn't exist";
+            
             return RC_FILE_NOT_FOUND;
         }
 	}
@@ -184,7 +180,7 @@ struct pageFrame{
 		return mgmtInfo->page_Frame_Dirty;
 		}
         else{
-            //RC_message="File to be opened doesn't exist";
+            
             return RC_FILE_NOT_FOUND;
         }
 	}
@@ -196,7 +192,7 @@ struct pageFrame{
 		return mgmtInfo->num_Write_IO;
 		}
         else{
-            //RC_message="File to be opened doesn't exist";
+            
             return RC_FILE_NOT_FOUND;
         }
 	}
@@ -216,7 +212,7 @@ struct pageFrame{
             return RC_OK;
 			
 		}else{
-			//RC_message="Buffer is not initialized ";
+			
 			return RC_BUFFER_NOT_INITIALIZED;
 		}
 	}
@@ -229,14 +225,14 @@ struct pageFrame{
 			pageNode tmp=mgmtInfo->head;
 			while(tmp!=NULL){
 				if(tmp->page_Number==page->pageNum && tmp->fixed_Count_Marked>0){
-					tmp->fixed_Count_Marked-=1;//decreasing fixed count value of page.
+					tmp->fixed_Count_Marked-=1;//decreasing fixed_Count_Marked value of page.
 				}
 				tmp=tmp->next;
 			}
 			free(tmp);
 			return RC_OK;
 		}else{
-			//RC_message="Buffer is not initialized ";
+			
 			return RC_BUFFER_NOT_INITIALIZED;
 		}
         
@@ -257,7 +253,7 @@ struct pageFrame{
 			}
 				return RC_OK;
 			}else{
-				//RC_message="Buffer is not initialized ";
+				
 				return RC_BUFFER_NOT_INITIALIZED;
 			}
 	}
@@ -286,7 +282,7 @@ struct pageFrame{
 		mgmtInfo->tail=NULL;
 		return RC_OK;
 		}else{
-			//RC_message="Buffer is not initialized ";
+			
 			return RC_BUFFER_NOT_INITIALIZED;
 		}
 	}
@@ -314,11 +310,11 @@ struct pageFrame{
 			free(tmp);
 			return RC_OK;
 		}else{
-			//RC_message="file to be opened doesn't exist";
+			
 			return RC_FILE_NOT_FOUND;
 		}
 		}else{
-			//RC_message="Buffer is not initialized ";
+			
 			return RC_BUFFER_NOT_INITIALIZED;
 		}
 		
@@ -342,11 +338,11 @@ struct pageFrame{
 			free(tmp);
 			return RC_OK;
 		}else{
-			//RC_message="file to be opened doesn't exist";
+			
 			return RC_FILE_NOT_FOUND;
 		}
 		}else{
-			//RC_message="Buffer is not initialized ";
+			
 			return RC_BUFFER_NOT_INITIALIZED;
 		}
 	}
@@ -371,7 +367,7 @@ struct pageFrame{
 				}
 				return NULL;
 		}else{
-			//RC_message="Buffer is not initialized ";
+			
 			return NULL;
 		}
 	}//
@@ -396,7 +392,7 @@ struct pageFrame{
 			return NULL;
 		}
 	}else{
-		//RC_message="Buffer is not initialized ";
+		
 		return NULL;
 	}
 	
@@ -487,7 +483,7 @@ struct pageFrame{
 				return flag;
 			}
 		 	}else{
-			//RC_message="Buffer is not initialized ";
+			
 			return RC_BUFFER_NOT_INITIALIZED;
 		}
 	}
@@ -552,7 +548,7 @@ struct pageFrame{
 			return RC_OK;	
 		}
 		}else{
-		//RC_message="Buffer is not initialized ";
+		
 		return RC_BUFFER_NOT_INITIALIZED;
 	}
 }	
@@ -603,12 +599,12 @@ RC lru_Technique (BM_BufferPool *const bm, BM_PageHandle *const page,const PageN
 					}
 					return RC_OK;
 				}else{
-					//RC_message="No Frame is availble for page to load ";
+					
 				return RC_NO_MORE_EMPTY_FRAME;
 				}
 			}
     	}else{
-		//RC_message="Buffer is not initialized ";
+		
 		return RC_BUFFER_NOT_INITIALIZED;
 	}
 }
