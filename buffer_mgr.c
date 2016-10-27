@@ -6,12 +6,12 @@
 #include <string.h>
 
 //#define FRAMELRU 100
-#define bufferPoolInfo* bufferNode;
-#define pageFrame* pageNode;
+typedef struct bufferPoolInfo* bufferNode;
+typedef struct pageFrame* pageNode;
 
 /******************************************Creating structure for bufferPool and pageFrames************************************/
 //stores important information about buffer manager for mgmtdata
-typedef struct bufferPoolInfo{
+struct bufferPoolInfo{
 
 		int num_Read_IO;// stores total number of Read IO
 		int num_Write_IO;//stores total number of Write IO
@@ -30,10 +30,10 @@ typedef struct bufferPoolInfo{
 		struct pageFrame *head; //head of page frames linked list
 		struct pageFrame *tail;//tail of page frames linked list
 		struct pageFrame *lastNode;//maintains last node address of page frames list
-	}bufferPoolInfo;
+};
 	
 	//keeps the iformation regarding each node in linked list of page frames
-	typedef struct pageFrame{
+struct pageFrame{
 		bool dirty_Bit; //dirty bit for page  true=dirty false= Not dirty
 		int page_Number;//page number stored in buffer pageFrame
 		int page_Frame_No;//frame number in page frames linked list
@@ -45,7 +45,7 @@ typedef struct bufferPoolInfo{
 		char *data;//stores content of page.
 		struct pageFrame *next;//pointer to next node in page frames linked list
 		struct pageFrame *previous;//pointer to previous node in page frames linked list
-	}pageFrame;
+};
 
 /***********************************************************************************************************************************/
 
@@ -53,16 +53,16 @@ typedef struct bufferPoolInfo{
 	//called when new page frame is created during initialization of buffer, each information is initialized with default value.
 	pageNode getNewNode(){
 		pageNode Node = calloc(PAGE_SIZE,sizeof(SM_PageHandle));
-		linkNode->dirty_Bit=false;
-		linkNode->page_Number=NO_PAGE;
-		linkNode->page_Frame_No=0;
+		Node->dirty_Bit=false;
+		Node->page_Number=NO_PAGE;
+		Node->page_Frame_No=0;
 		
-		linkNode->fixed_Count_Marked=0;
-		linkNode->pinning=0;
-		linkNode->filled=0;
-		linkNode->next=NULL;
-		linkNode->previous=NULL;
-		linkNode->data=(char *)calloc(PAGE_SIZE,sizeof(SM_PageHandle));;
+		Node->fixed_Count_Marked=0;
+		Node->pinning=0;
+		Node->filled=0;
+		Node->next=NULL;
+		Node->previous=NULL;
+		Node->data=(char *)calloc(PAGE_SIZE,sizeof(SM_PageHandle));;
 		return Node;
 	}
 
@@ -225,8 +225,8 @@ typedef struct bufferPoolInfo{
 	//unpins the page specified in page->pageNum only if the page has fixed_Count greater than 1.
 	RC unpinPage (BM_BufferPool *const bm, BM_PageHandle *const page){
 		if(bm!=NULL){
-			bufferPoolInfo *mgmtInfo=getMgmtInfo(bm);
-			pageFrame *tmp=mgmtInfo->head;
+			bufferNode mgmtInfo=getMgmtInfo(bm);
+			pageNode tmp=mgmtInfo->head;
 			while(tmp!=NULL){
 				if(tmp->page_Number==page->pageNum && tmp->fixed_Count_Marked>0){
 					tmp->fixed_Count_Marked-=1;//decreasing fixed count value of page.
@@ -568,7 +568,7 @@ RC lru_Technique (BM_BufferPool *const bm, BM_PageHandle *const page,const PageN
 			int j;
 			//page to be read is already in memory? if yes, return the pointer to page to client
 			if((status = findNodeinMemory(page,pageNum,bm)) != NULL){
-				update(bm, existStatus,pageNum);
+				update(bm, status,pageNum);
 				return RC_OK;
 			}
 			//empty frames in memory? if yes, read page to that frame from disk file.
